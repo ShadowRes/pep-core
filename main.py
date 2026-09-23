@@ -40,7 +40,6 @@ class PEPDevice:
         physical_seed = self.generate_physical_seed()
         salt = secrets.token_bytes(16)
         
-        # HKDF Key Derivation
         session_key = hkdf_extract_and_expand(salt, physical_seed + receiver_public_id, b"PEP-v1.1-SessionKey")
         
         msg_bytes = message_text.encode('utf-8')
@@ -62,7 +61,6 @@ class PEPDevice:
         
         recovered_seed = bytes([b ^ self.public_id[i % len(self.public_id)] for i, b in enumerate(wrapped_seed)])
         
-        # HKDF Key Derivation
         session_key = hkdf_extract_and_expand(salt, recovered_seed + self.public_id, b"PEP-v1.1-SessionKey")
         
         decrypted_bytes = bytes([b ^ session_key[i % len(session_key)] for i, b in enumerate(ciphertext)])
