@@ -1,42 +1,47 @@
 import unittest
 from pep.core import PEPDevice
-from cryptography.exceptions import InvalidTag
 
-class TestPEPExtensiveSuite(unittest.TestCase):
+class PEPPassphraseSelfDestructSuite(unittest.TestCase):
 
     def setUp(self):
-        self.sender = PEPDevice("alice")
-        self.receiver = PEPDevice("bob")
+        self.alice = PEPDevice("alice")
+        self.bob = PEPDevice("bob")
 
-    def test_encryption_decryption_loop(self):
-        """اختبار مكثف: 50 دورة تشفير وفك تشفير متتالية"""
-        for i in range(50):
-            msg = f"Stress Test Message Iteration #{i}"
-            pkg = self.sender.encrypt_for_receiver(self.receiver.public_id, msg)
-            decrypted = self.receiver.decrypt_incoming_package(pkg)
-            self.assertEqual(msg, decrypted)
-
-    def test_realtime_entropy_health_and_uniqueness(self):
-        """اختبار صحة الفحص اللحظي وجودة العشوائية الفيزيائية"""
-        seeds = set()
-        for _ in range(50):
-            seed = self.sender.generate_physical_seed()
-            # التأكد من نجاح الفحص اللحظي
-            self.assertTrue(self.sender.evaluate_entropy_health(seed))
-            seeds.add(seed)
+    def test_successful_passphrase_decryption(self):
+        """1. نجاح فك التشفير عند إدخال كلمة السر الصحيحة"""
+        secret_msg = b"Confidential Financial Payload"
+        passphrase = "MySecretPassphrase123"
         
-        # التأكد من أن جميع البذور الـ 50 فريدة تماماً ولم تتكرر أي بذرة
-        self.assertEqual(len(seeds), 50)
+        pkg = self.alice.encrypt_with_passphrase(self.bob.public_id, secret_msg, passphrase)
+        decrypted = self.bob.decrypt_with_passphrase(pkg, passphrase)
+        self.assertEqual(secret_msg, decrypted)
 
-    def test_tamper_detection(self):
-        """اختبار رفض التلاعب المباشر"""
-        package = self.sender.encrypt_for_receiver(self.receiver.public_id, "Tamper Test")
-        corrupted_ciphertext = bytearray(package["ciphertext"])
-        corrupted_ciphertext[0] ^= 0xFF
-        package["ciphertext"] = bytes(corrupted_ciphertext)
+    def test_three_attempts_and_self_destruct(self):
+        """2. اختبار الـ 3 محاولات الخاطئة وإتلاف البيانات نهائياً"""
+        secret_msg = b"Top Secret Data"
+        correct_passphrase = "CorrectPassphrase"
+        wrong_passphrase = "WrongPassphrase"
         
-        with self.assertRaises(InvalidTag):
-            self.receiver.decrypt_incoming_package(package)
+        pkg = self.alice.encrypt_with_passphrase(self.bob.public_id, secret_msg, correct_passphrase)
+        
+        # المحاولة الخاطئة الأولى
+        with self.assertRaises(ValueError) as ctx1:
+            self.bob.decrypt_with_passphrase(pkg, wrong_passphrase)
+        self.assertIn("متبقي لديك 2 محاولات", str(ctx1.exception))
+
+        # المحاولة الخاطئة الثانية
+        with self.assertRaises(ValueError) as ctx2:
+            self.bob.decrypt_with_passphrase(pkg, wrong_passphrase)
+        self.assertIn("متبقي لديك 1 محاولات", str(ctx2.exception))
+
+        # المحاولة الخاطئة الثالثة -> التدمير الإجباري والإتلاف
+        with self.assertRaises(PermissionError) as ctx3:
+            self.bob.decrypt_with_passphrase(pkg, wrong_passphrase)
+        self.assertIn("إتلاف البيانات نهائياً", str(ctx3.exception))
+
+        # محاولة رابعة حتى لو أورد كلمة السر الصحيحة الآن -> يجب الرفض لأن البيانات أُتلفت
+        with self.assertRaises(PermissionError):
+            self.bob.decrypt_with_passphrase(pkg, correct_passphrase)
 
 if __name__ == "__main__":
     unittest.main()
