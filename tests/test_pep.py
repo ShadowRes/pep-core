@@ -1,41 +1,42 @@
 import unittest
 from pep.core import PEPDevice
-from pep.utils import hkdf_extract_and_expand
 from cryptography.exceptions import InvalidTag
 
-class TestPEPProtocol(unittest.TestCase):
+class TestPEPExtensiveSuite(unittest.TestCase):
 
     def setUp(self):
         self.sender = PEPDevice("alice")
         self.receiver = PEPDevice("bob")
 
-    def test_encryption_decryption_chacha20(self):
-        """اختبار نجاح التشفير وفك التشفير بقفل ChaCha20-Poly1305"""
-        message = "Confidential Data Stream Test with ChaCha20"
-        package = self.sender.encrypt_for_receiver(self.receiver.public_id, message)
-        decrypted = self.receiver.decrypt_incoming_package(package)
-        self.assertEqual(message, decrypted)
+    def test_encryption_decryption_loop(self):
+        """اختبار مكثف: 50 دورة تشفير وفك تشفير متتالية"""
+        for i in range(50):
+            msg = f"Stress Test Message Iteration #{i}"
+            pkg = self.sender.encrypt_for_receiver(self.receiver.public_id, msg)
+            decrypted = self.receiver.decrypt_incoming_package(pkg)
+            self.assertEqual(msg, decrypted)
+
+    def test_realtime_entropy_health_and_uniqueness(self):
+        """اختبار صحة الفحص اللحظي وجودة العشوائية الفيزيائية"""
+        seeds = set()
+        for _ in range(50):
+            seed = self.sender.generate_physical_seed()
+            # التأكد من نجاح الفحص اللحظي
+            self.assertTrue(self.sender.evaluate_entropy_health(seed))
+            seeds.add(seed)
+        
+        # التأكد من أن جميع البذور الـ 50 فريدة تماماً ولم تتكرر أي بذرة
+        self.assertEqual(len(seeds), 50)
 
     def test_tamper_detection(self):
-        """اختبار كشف التلاعب بالرسالة المشفرة"""
-        message = "Secret Message"
-        package = self.sender.encrypt_for_receiver(self.receiver.public_id, message)
-        
-        # التلاعب بالبيانات المشفرة وتغيير أول بت فيها
+        """اختبار رفض التلاعب المباشر"""
+        package = self.sender.encrypt_for_receiver(self.receiver.public_id, "Tamper Test")
         corrupted_ciphertext = bytearray(package["ciphertext"])
         corrupted_ciphertext[0] ^= 0xFF
         package["ciphertext"] = bytes(corrupted_ciphertext)
         
-        # يجب أن يرفض النظام فك التشفير ويرفع خطأ InvalidTag
         with self.assertRaises(InvalidTag):
             self.receiver.decrypt_incoming_package(package)
-
-    def test_entropy_uniqueness(self):
-        """اختبار عشوائية البذور الفيزيائية وعدم تكرارها"""
-        seed1 = self.sender.generate_physical_seed()
-        seed2 = self.sender.generate_physical_seed()
-        self.assertNotEqual(seed1, seed2)
-        self.assertEqual(len(seed1), 32)
 
 if __name__ == "__main__":
     unittest.main()
